@@ -1,0 +1,49 @@
+/**
+ * Industrial Tactical Monochrome & Warm Amber Design System
+ * Inspired by Teenage Engineering & Elektron hardware (Zero Blue/Cyan AI Slop)
+ */
+
+:root {
+  /* Industrial Obsidian & Pitch Black Chassis */
+  --bg-app-ambient: #0a0a0c;
+  --bg-ambient-gradient: radial-gradient(circle at 50% 20%, #16171b 0%, #0a0a0c 80%, #050506 100%);
+  --bg-chassis: #121318;
+  --bg-chassis-surface: #181920;
+  --bg-module: #0e0f14;
+  --bg-knob: #1c1d24;
+  --bg-knob-highlight: #262832;
+  --bg-inset: #090a0d;
+
+  /* Tactical Hardware Accents */
+  --accent-amber: #f59e0b;
+  --accent-amber-bright: #fbbf24;
+  --accent-orange: #f97316;
+  --accent-red: #ef4444;
+  --accent-emerald: #10b981;
+  --accent-white: #ffffff;
+  --accent-bone: #e5e5e5;
+
+  /* Mechanical Milled Borders */
+  --border-chassis: rgba(255, 255, 255, 0.12);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-specular: rgba(255, 255, 255, 0.18);
+
+  /* Typography */
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-dim: #52525b;
+
+  /* Shadows */
+  --shadow-chassis: 0 30px 80px rgba(0, 0, 0, 0.8), 0 0 1px 1px rgba(255, 255, 255, 0.08);
+
+  /* Strict 0-Corner Geometry */
+  --radius-chassis: 0px;
+  --radius-knob: 9999px;
+  --radius-pill: 0px;
+  --radius-card: 0px;
+}
