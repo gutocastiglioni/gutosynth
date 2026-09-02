@@ -5,7 +5,8 @@
 
 import { ProjectData, PresetLibraryItem } from '../types/project';
 
-const STORAGE_KEY = 'synth_gesture_projects_v1';
+const STORAGE_KEY = 'gutosynth_projects_v1';
+const LEGACY_STORAGE_KEY = 'synth_gesture_projects_v1';
 
 export const FACTORY_PRESETS: PresetLibraryItem[] = [
   {
@@ -87,7 +88,7 @@ export class StorageService {
    */
   public getProjects(): ProjectData[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEY);
+      const data = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
       return data ? JSON.parse(data) : [];
     } catch {
       return [];

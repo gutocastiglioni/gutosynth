@@ -79,9 +79,15 @@ export function useHandTracking(
     lastKickTime: 0
   });
 
+  const lastPresenceRef = useRef({ left: false, right: false });
+  const lastTelemetryTimeRef = useRef(0);
+  const lastTelemetryValuesRef = useRef({ activeCount: -1, primary: '', secondary: '' });
+
   const toggleCamera = useCallback(async () => {
     if (isCameraActive) {
       handTracker.stop();
+      gestureVisualizer.updateHands(null, null);
+      lastPresenceRef.current = { left: false, right: false };
       setIsCameraActive(false);
       setLeftHand(null);
       setRightHand(null);
@@ -106,8 +112,17 @@ export function useHandTracking(
 
   const handleHandUpdate = useCallback(
     (left: ProcessedHand | null, right: ProcessedHand | null) => {
-      setLeftHand(left);
-      setRightHand(right);
+      // 1. Direct 60FPS hand update to Canvas visualizer without triggering heavy React re-renders
+      gestureVisualizer.updateHands(left, right);
+
+      // 2. Only update React hand presence state when a hand enters or leaves the frame
+      const hasLeft = Boolean(left);
+      const hasRight = Boolean(right);
+      if (hasLeft !== lastPresenceRef.current.left || hasRight !== lastPresenceRef.current.right) {
+        lastPresenceRef.current = { left: hasLeft, right: hasRight };
+        setLeftHand(left);
+        setRightHand(right);
+      }
 
       const activeCount = (left ? 1 : 0) + (right ? 1 : 0);
       let detectedNote: string | null = null;
@@ -361,18 +376,33 @@ export function useHandTracking(
         ? `ESQ: ${detectedChord || 'MUTED'}`
         : 'ESQ: AGUARDANDO';
 
-      setTelemetry({
-        activeHandsCount: activeCount,
-        leftHand: left,
-        rightHand: right,
-        primaryParameter: primaryText,
-        secondaryParameter: secondaryText,
-        detectedChord,
-        detectedNote,
-        cutoffHz: currentCutoff,
-        expressionValue: right ? right.normalizedY : 0.5,
-        fps: 60
-      });
+      // Throttle telemetry state dispatch to avoid thrashing React DOM reconciliation on mobile
+      const shouldUpdateTelemetry =
+        activeCount !== lastTelemetryValuesRef.current.activeCount ||
+        primaryText !== lastTelemetryValuesRef.current.primary ||
+        secondaryText !== lastTelemetryValuesRef.current.secondary ||
+        now - lastTelemetryTimeRef.current > 150;
+
+      if (shouldUpdateTelemetry) {
+        lastTelemetryTimeRef.current = now;
+        lastTelemetryValuesRef.current = {
+          activeCount,
+          primary: primaryText,
+          secondary: secondaryText
+        };
+        setTelemetry({
+          activeHandsCount: activeCount,
+          leftHand: left,
+          rightHand: right,
+          primaryParameter: primaryText,
+          secondaryParameter: secondaryText,
+          detectedChord,
+          detectedNote,
+          cutoffHz: currentCutoff,
+          expressionValue: right ? right.normalizedY : 0.5,
+          fps: 60
+        });
+      }
     },
     [activeInstrument, scale, rootNote, isAudioReady]
   );

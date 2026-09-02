@@ -13,8 +13,8 @@ interface HolographicHUDProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   isCameraActive: boolean;
   onToggleCamera: () => void;
-  leftHand: ProcessedHand | null;
-  rightHand: ProcessedHand | null;
+  leftHand?: ProcessedHand | null;
+  rightHand?: ProcessedHand | null;
   telemetry: GestureTelemetry;
   activeInstrument: InstrumentId;
   hudMode: HUDVisualMode;
@@ -85,8 +85,8 @@ export const HolographicHUD: React.FC<HolographicHUDProps> = ({
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // 2. Render Hand Landmarks and Laser HUD
-      gestureVisualizer.render(ctx, w, h, leftHand, rightHand, activeInstrument, hudMode);
+      // 2. Render Hand Landmarks and Laser HUD directly from visualizer cache
+      gestureVisualizer.render(ctx, w, h, undefined, undefined, activeInstrument, hudMode);
 
       animFrameRef.current = requestAnimationFrame(render);
     };
@@ -96,7 +96,7 @@ export const HolographicHUD: React.FC<HolographicHUDProps> = ({
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [leftHand, rightHand, activeInstrument, hudMode]);
+  }, [activeInstrument, hudMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -112,15 +112,15 @@ export const HolographicHUD: React.FC<HolographicHUDProps> = ({
   }, []);
 
   return (
-    <div className="relative w-full h-full min-h-[400px] md:min-h-[480px] bg-[#0a0b0e] flex flex-col justify-between overflow-hidden select-none">
+    <div className="relative w-full h-full min-h-[300px] sm:min-h-[360px] md:min-h-[480px] bg-[#0a0b0e] flex flex-col justify-between overflow-hidden select-none">
       {/* Mirrored Camera */}
       <video
         ref={videoRef as any}
         playsInline
         muted
         autoPlay
-        className={`absolute inset-0 w-full h-full object-cover transform -scale-x-100 transition-opacity duration-500 ${
-          isCameraActive ? 'opacity-85 filter contrast-110 brightness-95' : 'opacity-0 pointer-events-none'
+        className={`absolute inset-0 w-full h-full object-cover transform -scale-x-100 transform-gpu transition-opacity duration-300 ${
+          isCameraActive ? 'opacity-85 md:filter md:contrast-110 md:brightness-95' : 'opacity-0 pointer-events-none'
         }`}
       />
 
@@ -146,7 +146,7 @@ export const HolographicHUD: React.FC<HolographicHUDProps> = ({
       )}
 
       {/* 60FPS Spatial Canvas */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full z-20 pointer-events-none" />
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full z-20 pointer-events-none transform-gpu" />
 
       {/* Top Header: Height-Symmetric (40px) Status Badge & Square Icon Toggle */}
       <div className="relative z-30 p-3 flex items-center justify-between pointer-events-auto">

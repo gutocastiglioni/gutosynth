@@ -77,7 +77,7 @@ function writeString(view: DataView, offset: number, string: string): void {
 /**
  * Downloads a Blob as a file with specified filename
  */
-export function downloadBlob(blob: Blob, filename = 'synth-gesture-track.wav'): void {
+export function downloadBlob(blob: Blob, filename = 'gutosynth-track.wav'): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.style.display = 'none';
@@ -94,7 +94,7 @@ export function downloadBlob(blob: Blob, filename = 'synth-gesture-track.wav'): 
 /**
  * Exports all active recorded stems mixed together into a downloadable WAV file
  */
-export async function exportMasterMixdown(filename = 'synth-gesture-mixdown.wav'): Promise<boolean> {
+export async function exportMasterMixdown(filename = 'gutosynth-mixdown.wav'): Promise<boolean> {
   const instrumentIds: InstrumentId[] = ['synth', 'guitar', 'bass', 'drums', 'mic'];
   const blobs: { id: string; blob: Blob }[] = [];
 

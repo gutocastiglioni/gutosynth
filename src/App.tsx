@@ -1,5 +1,5 @@
 /**
- * SynthGesture Studio - Main Application Root
+ * gutosynth - Main Application Root
  * Next-Generation Spatial Gesture Multi-Instrument Studio
  * Single Viewport Desktop Workstation with Zero Vertical Page Scroll
  */

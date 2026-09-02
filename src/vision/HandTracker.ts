@@ -33,6 +33,7 @@ export class HandTracker {
   private cameraStream: MediaStream | null = null;
   private animationFrameId: number | null = null;
   private isRunning = false;
+  private isProcessingFrame = false;
   private callbacks: Set<HandCallback> = new Set();
 
   private trackLeft: HandTrack = {
@@ -58,6 +59,17 @@ export class HandTracker {
   };
 
   /**
+   * Helper to detect mobile environment for performance tuning
+   */
+  private isMobile(): boolean {
+    return (
+      typeof window !== 'undefined' &&
+      (window.innerWidth < 768 ||
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent))
+    );
+  }
+
+  /**
    * Initializes MediaPipe Hands pipeline
    */
   public async init(videoElement: HTMLVideoElement): Promise<boolean> {
@@ -74,15 +86,17 @@ export class HandTracker {
         return false;
       }
 
+      const mobileMode = this.isMobile();
+
       this.handsDetector = new HandsClass({
         locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
 
       this.handsDetector.setOptions({
         maxNumHands: 2,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.60,
-        minTrackingConfidence: 0.60
+        modelComplexity: mobileMode ? 0 : 1, // 0 = Lite (ultra-low latency on mobile CPUs), 1 = Full (desktop)
+        minDetectionConfidence: mobileMode ? 0.55 : 0.60,
+        minTrackingConfidence: mobileMode ? 0.55 : 0.60
       });
 
       this.handsDetector.onResults((results: any) => this.handleResults(results));
@@ -101,12 +115,13 @@ export class HandTracker {
 
     try {
       if (!this.cameraStream) {
+        const mobileMode = this.isMobile();
         this.cameraStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: 'user',
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            frameRate: { ideal: 60 }
+            width: mobileMode ? { ideal: 480, max: 640 } : { ideal: 640 },
+            height: mobileMode ? { ideal: 360, max: 480 } : { ideal: 480 },
+            frameRate: mobileMode ? { ideal: 30, max: 30 } : { ideal: 60 }
           },
           audio: false
         });
@@ -118,6 +133,7 @@ export class HandTracker {
       }
 
       this.isRunning = true;
+      this.isProcessingFrame = false;
       this.runDetectionLoop();
       return true;
     } catch (err) {
@@ -132,6 +148,7 @@ export class HandTracker {
    */
   public stop(): void {
     this.isRunning = false;
+    this.isProcessingFrame = false;
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
@@ -160,16 +177,19 @@ export class HandTracker {
   }
 
   /**
-   * Continuous frame pump to MediaPipe Hands
+   * Continuous frame pump to MediaPipe Hands with concurrency guard against backpressure
    */
   private async runDetectionLoop(): Promise<void> {
     if (!this.isRunning || !this.videoElement || !this.handsDetector) return;
 
-    if (this.videoElement.readyState >= 2) {
+    if (this.videoElement.readyState >= 2 && !this.isProcessingFrame) {
+      this.isProcessingFrame = true;
       try {
         await this.handsDetector.send({ image: this.videoElement });
       } catch (e) {
         // Suppress transient frame errors
+      } finally {
+        this.isProcessingFrame = false;
       }
     }
 

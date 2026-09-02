@@ -61,7 +61,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             <span className="text-sm md:text-base font-bold text-white tracking-widest font-mono uppercase">
-              SYNTH<span className="text-[#f59e0b]">GESTURE</span> <span className="text-slate-400 font-normal text-xs">OP-1</span>
+              GUTO<span className="text-[#f59e0b]">SYNTH</span> <span className="text-slate-400 font-normal text-xs">OP-1</span>
             </span>
           </div>
 

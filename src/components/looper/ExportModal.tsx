@@ -15,7 +15,7 @@ interface ExportModalProps {
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onSuccess }) => {
-  const [filename, setFilename] = useState('synth-gesture-session');
+  const [filename, setFilename] = useState('gutosynth-session');
   const [isExporting, setIsExporting] = useState(false);
 
   const handleExport = async () => {
