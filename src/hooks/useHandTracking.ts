@@ -57,6 +57,14 @@ export function useHandTracking(
   const lastChordKeyRef = useRef<string | null>(null);
   const wasActiveRef = useRef({ left: false, right: false });
 
+  // Presence & throttle refs to decouple high-speed 60fps tracking from React render cycle
+  const prevLeftPresenceRef = useRef(false);
+  const prevRightPresenceRef = useRef(false);
+  const prevActiveCountRef = useRef(0);
+  const prevPrimaryTextRef = useRef('');
+  const prevSecondaryTextRef = useRef('');
+  const lastTelemetryTimeRef = useRef(0);
+
   const smoothYRef = useRef<Record<FingerId, number>>({
     thumb: 0.5,
     index: 0.5,
@@ -79,18 +87,23 @@ export function useHandTracking(
     lastKickTime: 0
   });
 
-  const lastPresenceRef = useRef({ left: false, right: false });
-  const lastTelemetryTimeRef = useRef(0);
-  const lastTelemetryValuesRef = useRef({ activeCount: -1, primary: '', secondary: '' });
-
   const toggleCamera = useCallback(async () => {
     if (isCameraActive) {
       handTracker.stop();
-      gestureVisualizer.updateHands(null, null);
-      lastPresenceRef.current = { left: false, right: false };
       setIsCameraActive(false);
+      prevLeftPresenceRef.current = false;
+      prevRightPresenceRef.current = false;
+      prevActiveCountRef.current = 0;
       setLeftHand(null);
       setRightHand(null);
+      setTelemetry((prev) => ({
+        ...prev,
+        activeHandsCount: 0,
+        leftHand: null,
+        rightHand: null,
+        primaryParameter: 'DIR: AGUARDANDO',
+        secondaryParameter: 'ESQ: AGUARDANDO'
+      }));
       polySynthEngine.releaseAll();
       guitarEngine.stopAll();
       bassEngine.triggerRelease();
@@ -112,15 +125,15 @@ export function useHandTracking(
 
   const handleHandUpdate = useCallback(
     (left: ProcessedHand | null, right: ProcessedHand | null) => {
-      // 1. Direct 60FPS hand update to Canvas visualizer without triggering heavy React re-renders
-      gestureVisualizer.updateHands(left, right);
-
-      // 2. Only update React hand presence state when a hand enters or leaves the frame
-      const hasLeft = Boolean(left);
-      const hasRight = Boolean(right);
-      if (hasLeft !== lastPresenceRef.current.left || hasRight !== lastPresenceRef.current.right) {
-        lastPresenceRef.current = { left: hasLeft, right: hasRight };
+      // Fast presence check: Only trigger state update when hands enter or leave view
+      const leftPresent = Boolean(left);
+      const rightPresent = Boolean(right);
+      if (prevLeftPresenceRef.current !== leftPresent) {
+        prevLeftPresenceRef.current = leftPresent;
         setLeftHand(left);
+      }
+      if (prevRightPresenceRef.current !== rightPresent) {
+        prevRightPresenceRef.current = rightPresent;
         setRightHand(right);
       }
 
@@ -130,7 +143,10 @@ export function useHandTracking(
       const now = performance.now();
 
       if (!isAudioReady && !audioEngine.initialized) {
-        setTelemetry((prev) => ({ ...prev, activeHandsCount: activeCount }));
+        if (activeCount !== prevActiveCountRef.current) {
+          prevActiveCountRef.current = activeCount;
+          setTelemetry((prev) => ({ ...prev, activeHandsCount: activeCount }));
+        }
         return;
       }
 
@@ -376,20 +392,18 @@ export function useHandTracking(
         ? `ESQ: ${detectedChord || 'MUTED'}`
         : 'ESQ: AGUARDANDO';
 
-      // Throttle telemetry state dispatch to avoid thrashing React DOM reconciliation on mobile
       const shouldUpdateTelemetry =
-        activeCount !== lastTelemetryValuesRef.current.activeCount ||
-        primaryText !== lastTelemetryValuesRef.current.primary ||
-        secondaryText !== lastTelemetryValuesRef.current.secondary ||
-        now - lastTelemetryTimeRef.current > 150;
+        activeCount !== prevActiveCountRef.current ||
+        primaryText !== prevPrimaryTextRef.current ||
+        secondaryText !== prevSecondaryTextRef.current ||
+        now - lastTelemetryTimeRef.current > 80;
 
       if (shouldUpdateTelemetry) {
+        prevActiveCountRef.current = activeCount;
+        prevPrimaryTextRef.current = primaryText;
+        prevSecondaryTextRef.current = secondaryText;
         lastTelemetryTimeRef.current = now;
-        lastTelemetryValuesRef.current = {
-          activeCount,
-          primary: primaryText,
-          secondary: secondaryText
-        };
+
         setTelemetry({
           activeHandsCount: activeCount,
           leftHand: left,

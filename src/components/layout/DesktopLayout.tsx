@@ -14,8 +14,8 @@ interface DesktopLayoutProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   isCameraActive: boolean;
   onToggleCamera: () => void;
-  leftHand?: ProcessedHand | null;
-  rightHand?: ProcessedHand | null;
+  leftHand: ProcessedHand | null;
+  rightHand: ProcessedHand | null;
   telemetry: GestureTelemetry;
   activeInstrument: InstrumentId;
   onSelectInstrument: (id: InstrumentId) => void;

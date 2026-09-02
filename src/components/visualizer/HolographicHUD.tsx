@@ -6,6 +6,7 @@
 import React, { useRef, useEffect } from 'react';
 import { audioEngine } from '../../audio/AudioEngine';
 import { gestureVisualizer } from '../../vision/GestureVisualizer';
+import { handTracker } from '../../vision/HandTracker';
 import { ProcessedHand, GestureTelemetry, HUDVisualMode } from '../../types/gesture';
 import { InstrumentId } from '../../types/audio';
 
@@ -13,8 +14,8 @@ interface HolographicHUDProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   isCameraActive: boolean;
   onToggleCamera: () => void;
-  leftHand?: ProcessedHand | null;
-  rightHand?: ProcessedHand | null;
+  leftHand: ProcessedHand | null;
+  rightHand: ProcessedHand | null;
   telemetry: GestureTelemetry;
   activeInstrument: InstrumentId;
   hudMode: HUDVisualMode;
@@ -23,7 +24,7 @@ interface HolographicHUDProps {
 
 const FREQ_MARKS = ['20Hz', '50Hz', '100Hz', '200Hz', '500Hz', '1kHz', '2kHz', '5kHz', '10kHz'];
 
-export const HolographicHUD: React.FC<HolographicHUDProps> = ({
+export const HolographicHUD: React.FC<HolographicHUDProps> = React.memo(({
   videoRef,
   isCameraActive,
   onToggleCamera,
@@ -34,7 +35,17 @@ export const HolographicHUD: React.FC<HolographicHUDProps> = ({
   hudMode
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animFrameRef = useRef<number | null>(null);
+  const leftHandPropRef = useRef(leftHand);
+  const rightHandPropRef = useRef(rightHand);
+  const activeInstrumentRef = useRef(activeInstrument);
+  const hudModeRef = useRef(hudMode);
+
+  useEffect(() => {
+    leftHandPropRef.current = leftHand;
+    rightHandPropRef.current = rightHand;
+    activeInstrumentRef.current = activeInstrument;
+    hudModeRef.current = hudMode;
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -42,61 +53,71 @@ export const HolographicHUD: React.FC<HolographicHUDProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    let animId: number;
+
     const render = () => {
       const w = canvas.width;
       const h = canvas.height;
-      if (w === 0 || h === 0) {
-        animFrameRef.current = requestAnimationFrame(render);
-        return;
+      if (w > 0 && h > 0) {
+        ctx.clearRect(0, 0, w, h);
+
+        // 1. Draw warm golden-amber audio spectrum curve
+        const fftData = audioEngine.getFrequencyData();
+        const waveData = audioEngine.getWaveformData();
+
+        const pointsCount = 64;
+        const step = w / (pointsCount - 1);
+
+        const grad = ctx.createLinearGradient(0, h * 0.4, 0, h);
+        grad.addColorStop(0, 'rgba(245, 158, 11, 0.4)');
+        grad.addColorStop(0.5, 'rgba(180, 83, 9, 0.15)');
+        grad.addColorStop(1, 'rgba(10, 10, 12, 0.02)');
+
+        ctx.beginPath();
+        ctx.moveTo(0, h);
+        for (let i = 0; i < pointsCount; i++) {
+          const x = i * step;
+          const dataIdx = Math.floor((i / pointsCount) * waveData.length);
+          const fftIdx = Math.floor((i / pointsCount) * fftData.length);
+          const fftVal = Math.max(0, (fftData[fftIdx] + 90) / 90);
+          const waveVal = waveData[dataIdx] || 0;
+          const bell = Math.sin((i / pointsCount) * Math.PI) * 0.4 + 0.6;
+          const y = h - (fftVal * h * 0.35 * bell + waveVal * 15 + 15);
+          ctx.lineTo(x, Math.max(20, y));
+        }
+        ctx.lineTo(w, h);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 2. Render Hand Landmarks and Laser HUD (sample real-time 60fps hands directly)
+        const currentLeft = handTracker.latestLeftHand ?? leftHandPropRef.current;
+        const currentRight = handTracker.latestRightHand ?? rightHandPropRef.current;
+
+        gestureVisualizer.render(
+          ctx,
+          w,
+          h,
+          currentLeft,
+          currentRight,
+          activeInstrumentRef.current,
+          hudModeRef.current
+        );
       }
 
-      ctx.clearRect(0, 0, w, h);
-
-      // 1. Draw warm golden-amber audio spectrum curve
-      const fftData = audioEngine.getFrequencyData();
-      const waveData = audioEngine.getWaveformData();
-
-      const pointsCount = 64;
-      const step = w / (pointsCount - 1);
-
-      const grad = ctx.createLinearGradient(0, h * 0.4, 0, h);
-      grad.addColorStop(0, 'rgba(245, 158, 11, 0.4)');
-      grad.addColorStop(0.5, 'rgba(180, 83, 9, 0.15)');
-      grad.addColorStop(1, 'rgba(10, 10, 12, 0.02)');
-
-      ctx.beginPath();
-      ctx.moveTo(0, h);
-      for (let i = 0; i < pointsCount; i++) {
-        const x = i * step;
-        const dataIdx = Math.floor((i / pointsCount) * waveData.length);
-        const fftIdx = Math.floor((i / pointsCount) * fftData.length);
-        const fftVal = Math.max(0, (fftData[fftIdx] + 90) / 90);
-        const waveVal = waveData[dataIdx] || 0;
-        const bell = Math.sin((i / pointsCount) * Math.PI) * 0.4 + 0.6;
-        const y = h - (fftVal * h * 0.35 * bell + waveVal * 15 + 15);
-        ctx.lineTo(x, Math.max(20, y));
-      }
-      ctx.lineTo(w, h);
-      ctx.closePath();
-      ctx.fillStyle = grad;
-      ctx.fill();
-
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // 2. Render Hand Landmarks and Laser HUD directly from visualizer cache
-      gestureVisualizer.render(ctx, w, h, undefined, undefined, activeInstrument, hudMode);
-
-      animFrameRef.current = requestAnimationFrame(render);
+      animId = requestAnimationFrame(render);
     };
 
-    render();
+    animId = requestAnimationFrame(render);
 
     return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      cancelAnimationFrame(animId);
     };
-  }, [activeInstrument, hudMode]);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -112,15 +133,15 @@ export const HolographicHUD: React.FC<HolographicHUDProps> = ({
   }, []);
 
   return (
-    <div className="relative w-full h-full min-h-[300px] sm:min-h-[360px] md:min-h-[480px] bg-[#0a0b0e] flex flex-col justify-between overflow-hidden select-none">
-      {/* Mirrored Camera */}
+    <div className="relative w-full h-full min-h-[400px] md:min-h-[480px] bg-[#0a0b0e] flex flex-col justify-between overflow-hidden select-none">
+      {/* Mirrored Camera - Hardware accelerated overlay without heavy CSS filters */}
       <video
         ref={videoRef as any}
         playsInline
         muted
         autoPlay
-        className={`absolute inset-0 w-full h-full object-cover transform -scale-x-100 transform-gpu transition-opacity duration-300 ${
-          isCameraActive ? 'opacity-85 md:filter md:contrast-110 md:brightness-95' : 'opacity-0 pointer-events-none'
+        className={`absolute inset-0 w-full h-full object-cover transform -scale-x-100 transition-opacity duration-300 ${
+          isCameraActive ? 'opacity-85' : 'opacity-0 pointer-events-none'
         }`}
       />
 
@@ -146,7 +167,7 @@ export const HolographicHUD: React.FC<HolographicHUDProps> = ({
       )}
 
       {/* 60FPS Spatial Canvas */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full z-20 pointer-events-none transform-gpu" />
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full z-20 pointer-events-none" />
 
       {/* Top Header: Height-Symmetric (40px) Status Badge & Square Icon Toggle */}
       <div className="relative z-30 p-3 flex items-center justify-between pointer-events-auto">
@@ -219,4 +240,4 @@ export const HolographicHUD: React.FC<HolographicHUDProps> = ({
       </div>
     </div>
   );
-};
+});

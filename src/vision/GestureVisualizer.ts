@@ -41,25 +41,6 @@ export const DRUM_ZONES = [
 export class GestureVisualizer {
   private ripples: Ripple[] = [];
   private pulsePhase = 0;
-  private currentLeftHand: ProcessedHand | null = null;
-  private currentRightHand: ProcessedHand | null = null;
-
-  private isMobile(): boolean {
-    return (
-      typeof window !== 'undefined' &&
-      (window.innerWidth < 768 ||
-        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent))
-    );
-  }
-
-  public updateHands(left: ProcessedHand | null, right: ProcessedHand | null): void {
-    this.currentLeftHand = left;
-    this.currentRightHand = right;
-  }
-
-  public getHands(): { left: ProcessedHand | null; right: ProcessedHand | null } {
-    return { left: this.currentLeftHand, right: this.currentRightHand };
-  }
 
   public addRipple(x: number, y: number, color = '#00f2fe'): void {
     this.ripples.push({
@@ -89,16 +70,13 @@ export class GestureVisualizer {
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
-    leftHand?: ProcessedHand | null,
-    rightHand?: ProcessedHand | null,
-    activeInstrument: InstrumentId = 'synth',
+    leftHand: ProcessedHand | null,
+    rightHand: ProcessedHand | null,
+    activeInstrument: InstrumentId,
     mode: HUDVisualMode = 'cyber'
   ): void {
     if (width <= 0 || height <= 0) return;
     this.pulsePhase += 0.08;
-
-    const left = leftHand !== undefined ? leftHand : this.currentLeftHand;
-    const right = rightHand !== undefined ? rightHand : this.currentRightHand;
 
     // 1. Holographic Pitch Grid Lines
     this.drawHolographicGrid(ctx, width, height, mode);
@@ -109,13 +87,13 @@ export class GestureVisualizer {
     }
 
     // 3. Render Left Hand Frame (Electric Purple)
-    if (left) {
-      this.renderHand(ctx, left, width, height, '#9d4edd', '#c77dff', 'L-HARMONY', activeInstrument);
+    if (leftHand) {
+      this.renderHand(ctx, leftHand, width, height, '#9d4edd', '#c77dff', 'L-HARMONY', activeInstrument);
     }
 
     // 4. Render Right Hand Frame (Cyber Cyan)
-    if (right) {
-      this.renderHand(ctx, right, width, height, '#00f2fe', '#67e8f9', 'R-EXPRESSION', activeInstrument);
+    if (rightHand) {
+      this.renderHand(ctx, rightHand, width, height, '#00f2fe', '#67e8f9', 'R-EXPRESSION', activeInstrument);
     }
 
     // 5. Impact & Echo Ripples
@@ -135,12 +113,10 @@ export class GestureVisualizer {
     const landmarks = hand.landmarks;
     if (!landmarks || landmarks.length < 21) return;
 
-    const isMobile = this.isMobile();
-
     // 1. Sleek 21-Joint Skeletal Segments in Mirrored Space
     ctx.lineWidth = 2.0;
     ctx.strokeStyle = primaryColor;
-    ctx.shadowBlur = isMobile ? 0 : 10;
+    ctx.shadowBlur = 10;
     ctx.shadowColor = glowColor;
 
     HAND_CONNECTIONS.forEach(([i1, i2]) => {
@@ -214,7 +190,7 @@ export class GestureVisualizer {
 
       ctx.strokeStyle = laserGrad;
       ctx.lineWidth = 2;
-      ctx.shadowBlur = isMobile ? 0 : 16;
+      ctx.shadowBlur = 16;
       ctx.shadowColor = glowColor;
       ctx.beginPath();
       ctx.moveTo(fx, 0);
@@ -238,7 +214,7 @@ export class GestureVisualizer {
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 9px monospace';
       ctx.textAlign = 'center';
-      ctx.shadowBlur = isMobile ? 0 : 6;
+      ctx.shadowBlur = 6;
       ctx.shadowColor = '#000000';
       ctx.fillText(f.label, fx, fy - 18);
     });
@@ -260,14 +236,14 @@ export class GestureVisualizer {
         ctx.arc(px, py, 15 + Math.sin(this.pulsePhase * 2) * 3, 0, Math.PI * 2);
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 2.5;
-        ctx.shadowBlur = isMobile ? 0 : 18;
+        ctx.shadowBlur = 18;
         ctx.shadowColor = glowColor;
         ctx.stroke();
 
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 10px monospace';
         ctx.textAlign = 'center';
-        ctx.shadowBlur = isMobile ? 0 : 6;
+        ctx.shadowBlur = 6;
         ctx.shadowColor = '#000000';
         ctx.fillText('PINCH', px, py - 20);
         ctx.restore();
@@ -280,7 +256,7 @@ export class GestureVisualizer {
     ctx.fillStyle = primaryColor;
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
-    ctx.shadowBlur = isMobile ? 0 : 6;
+    ctx.shadowBlur = 6;
     ctx.shadowColor = '#000000';
     ctx.fillText(label, pcx, pcy - 12);
   }
@@ -353,7 +329,7 @@ export class GestureVisualizer {
       ctx.strokeStyle = r.color;
       ctx.globalAlpha = Math.max(0, r.alpha);
       ctx.lineWidth = 2.5;
-      ctx.shadowBlur = this.isMobile() ? 0 : 12;
+      ctx.shadowBlur = 12;
       ctx.shadowColor = r.color;
       ctx.stroke();
       ctx.restore();

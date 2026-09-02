@@ -28,7 +28,7 @@ interface MobileTrackArrangerProps {
   onSetLoopBars: (bars: 1 | 2 | 4 | 8) => void;
 }
 
-export const MobileTrackArranger: React.FC<MobileTrackArrangerProps> = ({
+export const MobileTrackArranger: React.FC<MobileTrackArrangerProps> = React.memo(({
   tracks,
   looperState,
   currentStep,
@@ -193,4 +193,4 @@ export const MobileTrackArranger: React.FC<MobileTrackArrangerProps> = ({
       </div>
     </div>
   );
-};
+});

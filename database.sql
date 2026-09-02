@@ -1,4 +1,4 @@
--- gutosynth: Database Schema
+-- GutoSynth: Database Schema
 -- Tracks and project sessions stored for collaborative & cloud persistence
 
 CREATE TABLE IF NOT EXISTS public.synth_projects (

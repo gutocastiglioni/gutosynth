@@ -14,8 +14,8 @@ interface MobileLayoutProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   isCameraActive: boolean;
   onToggleCamera: () => void;
-  leftHand?: ProcessedHand | null;
-  rightHand?: ProcessedHand | null;
+  leftHand: ProcessedHand | null;
+  rightHand: ProcessedHand | null;
   telemetry: GestureTelemetry;
   activeInstrument: InstrumentId;
   onSelectInstrument: (id: InstrumentId) => void;
@@ -44,7 +44,7 @@ interface MobileLayoutProps {
   onSetLoopBars: (bars: 1 | 2 | 4 | 8) => void;
 }
 
-export const MobileLayout: React.FC<MobileLayoutProps> = React.memo(({
+export const MobileLayout: React.FC<MobileLayoutProps> = ({
   videoRef,
   isCameraActive,
   onToggleCamera,
@@ -131,4 +131,4 @@ export const MobileLayout: React.FC<MobileLayoutProps> = React.memo(({
       </div>
     </div>
   );
-});
+};

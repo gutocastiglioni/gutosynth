@@ -35,7 +35,7 @@ interface HeaderProps {
   onSetLoopBars: (bars: 1 | 2 | 4 | 8) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+export const Header: React.FC<HeaderProps> = React.memo(({
   onOpenLibrary,
   onOpenHelp,
   onOpenExport,
@@ -158,4 +158,4 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
     </header>
   );
-};
+});

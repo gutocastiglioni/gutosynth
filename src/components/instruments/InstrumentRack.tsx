@@ -24,7 +24,7 @@ interface InstrumentRackProps {
   currentStep?: number;
 }
 
-export const InstrumentRack: React.FC<InstrumentRackProps> = ({
+export const InstrumentRack: React.FC<InstrumentRackProps> = React.memo(({
   activeInstrument,
   onSelectInstrument,
   scale,
@@ -111,4 +111,4 @@ export const InstrumentRack: React.FC<InstrumentRackProps> = ({
       </div>
     </div>
   );
-};
+});

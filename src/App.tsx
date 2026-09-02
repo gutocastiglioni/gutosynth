@@ -1,5 +1,5 @@
 /**
- * gutosynth - Main Application Root
+ * GutoSynth - Main Application Root
  * Next-Generation Spatial Gesture Multi-Instrument Studio
  * Single Viewport Desktop Workstation with Zero Vertical Page Scroll
  */

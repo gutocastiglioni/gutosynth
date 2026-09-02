@@ -17,7 +17,7 @@ export const GestureHelper: React.FC<GestureHelperProps> = ({ isOpen, onClose })
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="gutosynth Gesture Controls"
+      title="GutoSynth Gesture Controls"
       subtitle="Master spatial music creation with dual-hand tracking gestures"
       maxWidth="lg"
     >
