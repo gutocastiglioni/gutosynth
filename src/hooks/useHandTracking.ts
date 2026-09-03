@@ -16,7 +16,7 @@ import { guitarEngine } from '../audio/instruments/GuitarEngine';
 import { bassEngine } from '../audio/instruments/BassEngine';
 import { drumEngine } from '../audio/instruments/DrumEngine';
 import { micVoiceEngine } from '../audio/instruments/MicVoiceEngine';
-import { quantizeCoordinateToNote, getChordVoicing, getLeadNoteForHand } from '../audio/scales';
+import { quantizeCoordinateToNote, getChordVoicing, getLeadNoteForHand, getScaleNotes } from '../audio/scales';
 import { ProcessedHand, GestureTelemetry, HUDVisualMode } from '../types/gesture';
 import { InstrumentId, ScaleName } from '../types/audio';
 
@@ -27,6 +27,7 @@ interface DrumStriker {
   state: 'ARMED' | 'STRUCK' | 'RECOILING';
   lastStrikeTime: number;
   peakZ: number;
+  peakY: number;
 }
 
 export function useHandTracking(
@@ -66,11 +67,7 @@ export function useHandTracking(
   const lastTelemetryTimeRef = useRef(0);
 
   const smoothYRef = useRef<Record<FingerId, number>>({
-    thumb: 0.5,
-    index: 0.5,
-    middle: 0.5,
-    ring: 0.5,
-    pinky: 0.5
+    thumb: 0.5, index: 0.5, middle: 0.5, ring: 0.5, pinky: 0.5
   });
 
   const drumTrackerRef = useRef<{
@@ -80,12 +77,28 @@ export function useHandTracking(
     prevRightThumb: boolean;
     lastKickTime: number;
   }>({
-    right: { y: 0.5, z: 0, time: 0, state: 'ARMED', lastStrikeTime: 0, peakZ: 0 },
-    left: { y: 0.5, z: 0, time: 0, state: 'ARMED', lastStrikeTime: 0, peakZ: 0 },
+    right: { y: 0.5, z: 0, time: 0, state: 'ARMED', lastStrikeTime: 0, peakZ: 0, peakY: 0.5 },
+    left: { y: 0.5, z: 0, time: 0, state: 'ARMED', lastStrikeTime: 0, peakZ: 0, peakY: 0.5 },
     prevLeftThumb: false,
     prevRightThumb: false,
     lastKickTime: 0
   });
+
+  // Strict Mode Isolation: Cleanly reset audio & tracking states when active instrument changes
+  const prevInstrumentRef = useRef<InstrumentId>(activeInstrument);
+  useEffect(() => {
+    if (prevInstrumentRef.current !== activeInstrument) {
+      polySynthEngine.releaseAll();
+      guitarEngine.stopAll();
+      bassEngine.triggerRelease();
+      lastActiveNoteRef.current = null;
+      lastChordKeyRef.current = null;
+      wasActiveRef.current = { left: false, right: false };
+      drumTrackerRef.current.right.state = 'ARMED';
+      drumTrackerRef.current.left.state = 'ARMED';
+      prevInstrumentRef.current = activeInstrument;
+    }
+  }, [activeInstrument]);
 
   const toggleCamera = useCallback(async () => {
     if (isCameraActive) {
@@ -110,6 +123,9 @@ export function useHandTracking(
     } else {
       await audioEngine.init();
       polySynthEngine.init();
+      guitarEngine.init();
+      bassEngine.init();
+      drumEngine.init();
       polySynthEngine.releaseAll();
       guitarEngine.stopAll();
       bassEngine.triggerRelease();
@@ -218,8 +234,8 @@ export function useHandTracking(
 
           switch (striker.state) {
             case 'ARMED': {
-              const isThrustForward = vz < -0.018;
-              const isDownwardSnap = vy > 0.026;
+              const isThrustForward = vz < -0.016;
+              const isDownwardSnap = vy > 0.020;
 
               if (isThrustForward || isDownwardSnap) {
                 for (const zone of DRUM_ZONES) {
@@ -229,13 +245,14 @@ export function useHandTracking(
                   const maxY = zone.y + zone.height / 2;
 
                   if (mirroredX >= minX && mirroredX <= maxX && currentY >= minY && currentY <= maxY) {
-                    const velocity = Math.min(1.0, Math.max(0.65, Math.abs(vz) * 16 + vy * 8 + 0.65));
+                    const velocity = Math.min(1.0, Math.max(0.65, Math.abs(vz) * 16 + vy * 9 + 0.65));
                     drumEngine.triggerPad(zone.id as any, velocity);
-                    gestureVisualizer.addRipple(mirroredX * 640, currentY * 480, zone.color);
+                    gestureVisualizer.addNormalizedRipple(mirroredX, currentY, zone.color);
 
                     striker.state = 'STRUCK';
                     striker.lastStrikeTime = now;
                     striker.peakZ = currentZ;
+                    striker.peakY = currentY;
                     detectedNote = zone.name;
                     break;
                   }
@@ -248,7 +265,18 @@ export function useHandTracking(
               if (currentZ < striker.peakZ) {
                 striker.peakZ = currentZ;
               }
-              const isPullingBack = vz > 0.008 || currentZ > striker.peakZ + 0.018 || now - striker.lastStrikeTime > 140;
+              if (currentY > striker.peakY) {
+                striker.peakY = currentY;
+              }
+
+              // Fast bi-directional recoil: recovers via upward bounce (vy < -0.012), Z pull-back, or 85ms timeout
+              const isPullingBack =
+                vz > 0.006 ||
+                vy < -0.012 ||
+                currentZ > striker.peakZ + 0.015 ||
+                (striker.peakY - currentY) > 0.02 ||
+                now - striker.lastStrikeTime > 85;
+
               if (isPullingBack) {
                 striker.state = 'RECOILING';
               }
@@ -256,7 +284,13 @@ export function useHandTracking(
             }
 
             case 'RECOILING': {
-              const hasResetPosition = currentZ > striker.peakZ + 0.035 || vz >= -0.003 || now - striker.lastStrikeTime > 220;
+              // Rapid re-arming: ready for consecutive rolls in under 130ms (or instant on upward return)
+              const hasResetPosition =
+                currentZ > striker.peakZ + 0.025 ||
+                (striker.peakY - currentY) > 0.03 ||
+                vy < -0.006 ||
+                now - striker.lastStrikeTime > 130;
+
               if (hasResetPosition) {
                 striker.state = 'ARMED';
               }
@@ -278,10 +312,12 @@ export function useHandTracking(
       // =====================================================================
       if (activeInstrument !== 'drums') {
         if (!hasVisualRight) {
-          // Zero sons imediato quando a mão direita não tem dedos ativos
+          // Zero sons imediato na mão direita quando fechada ou ausente
           polySynthEngine.releaseLead();
           guitarEngine.stopAll();
-          bassEngine.triggerRelease();
+          if (!hasVisualLeft) {
+            bassEngine.triggerRelease();
+          }
           lastActiveNoteRef.current = null;
           wasActiveRef.current.right = false;
           detectedNote = right ? 'MUTED (FECHADA)' : null;
@@ -301,6 +337,7 @@ export function useHandTracking(
               polySynthEngine.playLead(leadNote, 0.85);
               lastActiveNoteRef.current = leadNote;
               wasActiveRef.current.right = true;
+              detectedNote = leadNote;
               break;
             }
 
@@ -311,26 +348,28 @@ export function useHandTracking(
                 lastActiveNoteRef.current = leadNote;
                 wasActiveRef.current.right = true;
               }
+              detectedNote = leadNote;
               break;
             }
 
             case 'bass': {
               bassEngine.setGestureFilter(right.normalizedX, maxActiveHeight);
-              const bassNote = quantizeCoordinateToNote(maxActiveHeight, rootNote, scale, 1, 2);
+              // Audible bass octave 2 and 3 (65Hz - 240Hz)
+              const bassNote = quantizeCoordinateToNote(maxActiveHeight, rootNote, scale, 2, 2);
               if (lastActiveNoteRef.current !== bassNote) {
-                bassEngine.triggerAttack(bassNote, 0.9);
+                bassEngine.triggerAttack(bassNote, 0.95);
                 lastActiveNoteRef.current = bassNote;
                 wasActiveRef.current.right = true;
               }
+              detectedNote = bassNote;
               break;
             }
 
             case 'mic':
               micVoiceEngine.setGestureVoiceModulation(right.normalizedX, maxActiveHeight);
+              detectedNote = leadNote;
               break;
           }
-
-          detectedNote = leadNote;
         }
       }
 
@@ -339,9 +378,12 @@ export function useHandTracking(
       // =====================================================================
       if (activeInstrument !== 'drums') {
         if (!hasVisualLeft) {
-          // Zero sons imediato quando a mão esquerda não tem dedos ativos
+          // Zero sons imediato na mão esquerda quando fechada ou ausente
           polySynthEngine.releaseChord();
           guitarEngine.stopAll();
+          if (!hasVisualRight) {
+            bassEngine.triggerRelease();
+          }
           lastChordKeyRef.current = null;
           wasActiveRef.current.left = false;
           detectedChord = left ? 'MUTED (FECHADA)' : null;
@@ -364,7 +406,16 @@ export function useHandTracking(
 
           const chordKey = `${left.chordIndex}_${hasSub}_${chordOctave}_${chordNotes.join('-')}`;
 
-          if (lastChordKeyRef.current !== chordKey || !wasActiveRef.current.left) {
+          if (activeInstrument === 'bass') {
+            const bassNotes = getScaleNotes(rootNote, scale, 2, 2);
+            const rootBassNote = bassNotes[left.chordIndex % Math.max(1, bassNotes.length)] || 'C2';
+            if (lastChordKeyRef.current !== rootBassNote || !wasActiveRef.current.left) {
+              bassEngine.triggerAttack(rootBassNote, 0.95);
+              lastChordKeyRef.current = rootBassNote;
+              wasActiveRef.current.left = true;
+            }
+            detectedChord = `BASS ROOT: ${rootBassNote}`;
+          } else if (lastChordKeyRef.current !== chordKey || !wasActiveRef.current.left) {
             if (activeInstrument === 'synth') {
               polySynthEngine.triggerChord(chordNotes, 0.75);
             } else if (activeInstrument === 'guitar') {

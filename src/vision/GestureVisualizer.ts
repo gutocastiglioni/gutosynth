@@ -29,28 +29,43 @@ interface Ripple {
   alpha: number;
 }
 
+interface Ripple {
+  x: number;
+  y: number;
+  radius: number;
+  maxRadius: number;
+  color: string;
+  alpha: number;
+  isNormalized?: boolean;
+}
+
 export const DRUM_ZONES = [
   { id: 'hihat_closed', name: 'CLOSED HAT', x: 0.20, y: 0.28, width: 0.22, height: 0.24, color: '#f59e0b' },
   { id: 'hihat_open', name: 'OPEN HAT', x: 0.50, y: 0.24, width: 0.22, height: 0.22, color: '#fbbf24' },
   { id: 'cymbal', name: 'CRASH', x: 0.80, y: 0.28, width: 0.22, height: 0.24, color: '#ef4444' },
-  { id: 'snare', name: 'SNARE', x: 0.25, y: 0.68, width: 0.24, height: 0.24, color: '#00f2fe' },
-  { id: 'clap', name: 'CLAP', x: 0.75, y: 0.68, width: 0.24, height: 0.24, color: '#06d6a0' },
-  { id: 'tom', name: 'TOM // PERC', x: 0.50, y: 0.68, width: 0.22, height: 0.22, color: '#9d4edd' }
+  { id: 'snare', name: 'SNARE "PÁ"', x: 0.25, y: 0.65, width: 0.28, height: 0.28, color: '#00f2fe' },
+  { id: 'clap', name: 'CLAP', x: 0.75, y: 0.65, width: 0.28, height: 0.28, color: '#06d6a0' },
+  { id: 'tom', name: 'TOM // PERC', x: 0.50, y: 0.65, width: 0.24, height: 0.24, color: '#9d4edd' }
 ];
 
 export class GestureVisualizer {
   private ripples: Ripple[] = [];
   private pulsePhase = 0;
 
-  public addRipple(x: number, y: number, color = '#00f2fe'): void {
+  public addRipple(x: number, y: number, color = '#00f2fe', isNormalized = false): void {
     this.ripples.push({
       x,
       y,
       radius: 8,
       maxRadius: 72,
       color,
-      alpha: 1.0
+      alpha: 1.0,
+      isNormalized
     });
+  }
+
+  public addNormalizedRipple(normX: number, normY: number, color = '#00f2fe'): void {
+    this.addRipple(normX, normY, color, true);
   }
 
   public triggerEchoVisualBurst(x: number, y: number, color = '#00f2fe'): void {
@@ -97,7 +112,7 @@ export class GestureVisualizer {
     }
 
     // 5. Impact & Echo Ripples
-    this.renderRipples(ctx);
+    this.renderRipples(ctx, width, height);
   }
 
   private renderHand(
@@ -312,7 +327,7 @@ export class GestureVisualizer {
     });
   }
 
-  private renderRipples(ctx: CanvasRenderingContext2D): void {
+  private renderRipples(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     for (let i = this.ripples.length - 1; i >= 0; i--) {
       const r = this.ripples[i];
       r.radius += 3.2;
@@ -323,9 +338,12 @@ export class GestureVisualizer {
         continue;
       }
 
+      const rx = r.isNormalized ? r.x * width : r.x;
+      const ry = r.isNormalized ? r.y * height : r.y;
+
       ctx.save();
       ctx.beginPath();
-      ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+      ctx.arc(rx, ry, r.radius, 0, Math.PI * 2);
       ctx.strokeStyle = r.color;
       ctx.globalAlpha = Math.max(0, r.alpha);
       ctx.lineWidth = 2.5;
