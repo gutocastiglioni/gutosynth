@@ -122,6 +122,10 @@ export interface ProcessedHand {
   normalizedX: number;
   normalizedY: number;
   chordIndex: number;
+
+  // Kinematic Dead Reckoning & Inertial Prediction
+  isExtrapolated?: boolean;
+  predictionConfidence?: number;
 }
 
 export interface GestureTelemetry {

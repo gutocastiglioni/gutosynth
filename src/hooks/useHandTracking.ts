@@ -9,7 +9,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { handTracker } from '../vision/HandTracker';
-import { gestureVisualizer, DRUM_ZONES } from '../vision/GestureVisualizer';
+import { gestureVisualizer } from '../vision/GestureVisualizer';
+import { drumKinematics } from '../vision/DrumKinematics';
 import { audioEngine } from '../audio/AudioEngine';
 import { polySynthEngine, FingerId } from '../audio/instruments/PolySynthEngine';
 import { guitarEngine } from '../audio/instruments/GuitarEngine';
@@ -20,15 +21,7 @@ import { quantizeCoordinateToNote, getChordVoicing, getLeadNoteForHand, getScale
 import { ProcessedHand, GestureTelemetry, HUDVisualMode } from '../types/gesture';
 import { InstrumentId, ScaleName } from '../types/audio';
 
-interface DrumStriker {
-  y: number;
-  z: number;
-  time: number;
-  state: 'ARMED' | 'STRUCK' | 'RECOILING';
-  lastStrikeTime: number;
-  peakZ: number;
-  peakY: number;
-}
+
 
 export function useHandTracking(
   activeInstrument: InstrumentId,
@@ -70,19 +63,7 @@ export function useHandTracking(
     thumb: 0.5, index: 0.5, middle: 0.5, ring: 0.5, pinky: 0.5
   });
 
-  const drumTrackerRef = useRef<{
-    right: DrumStriker;
-    left: DrumStriker;
-    prevLeftThumb: boolean;
-    prevRightThumb: boolean;
-    lastKickTime: number;
-  }>({
-    right: { y: 0.5, z: 0, time: 0, state: 'ARMED', lastStrikeTime: 0, peakZ: 0, peakY: 0.5 },
-    left: { y: 0.5, z: 0, time: 0, state: 'ARMED', lastStrikeTime: 0, peakZ: 0, peakY: 0.5 },
-    prevLeftThumb: false,
-    prevRightThumb: false,
-    lastKickTime: 0
-  });
+
 
   // Strict Mode Isolation: Cleanly reset audio & tracking states when active instrument changes
   const prevInstrumentRef = useRef<InstrumentId>(activeInstrument);
@@ -94,8 +75,7 @@ export function useHandTracking(
       lastActiveNoteRef.current = null;
       lastChordKeyRef.current = null;
       wasActiveRef.current = { left: false, right: false };
-      drumTrackerRef.current.right.state = 'ARMED';
-      drumTrackerRef.current.left.state = 'ARMED';
+      drumKinematics.reset();
       prevInstrumentRef.current = activeInstrument;
     }
   }, [activeInstrument]);
@@ -187,124 +167,13 @@ export function useHandTracking(
       const hasVisualLeft = Boolean(left) && (numActiveFingersLeft > 0 || Boolean(left?.isPinching));
 
       // =====================================================================
-      // 1. AIR-DRUMMING (DISCRETE STROKE FSM)
+      // 1. AIR-DRUMMING (BALLISTIC KINEMATIC PREDICTOR & RAY-SWEEP)
       // =====================================================================
       if (activeInstrument === 'drums') {
-        const kickTracker = drumTrackerRef.current;
-        const leftThumb = left?.thumbExtended || false;
-        const rightThumb = right?.thumbExtended || false;
-
-        const isDoubleThumb = leftThumb && rightThumb;
-        const isSingleThumb = (leftThumb || rightThumb) && !isDoubleThumb;
-        const thumbEdge = (leftThumb && !kickTracker.prevLeftThumb) || (rightThumb && !kickTracker.prevRightThumb);
-
-        if (isDoubleThumb && thumbEdge && now - kickTracker.lastKickTime > 200) {
-          drumEngine.triggerPad('kick', 1.0);
-          gestureVisualizer.addRipple(320, 360, '#f59e0b');
-          setTimeout(() => {
-            drumEngine.triggerPad('kick', 0.95);
-            gestureVisualizer.addRipple(320, 380, '#f59e0b');
-          }, 95);
-          kickTracker.lastKickTime = now;
-          detectedNote = 'BUMBO DUPLO';
-        } else if (isSingleThumb && thumbEdge && now - kickTracker.lastKickTime > 160) {
-          drumEngine.triggerPad('kick', 0.9);
-          const kx = rightThumb ? (right?.thumbTip.x || 0.5) * 640 : (left?.thumbTip.x || 0.5) * 640;
-          const ky = rightThumb ? (right?.thumbTip.y || 0.7) * 480 : (left?.thumbTip.y || 0.7) * 480;
-          gestureVisualizer.addRipple(kx, ky, '#f59e0b');
-          kickTracker.lastKickTime = now;
-          detectedNote = 'BUMBO';
+        const drumResult = drumKinematics.process(left, right, now);
+        if (drumResult.hitNote) {
+          detectedNote = drumResult.hitNote;
         }
-
-        kickTracker.prevLeftThumb = leftThumb;
-        kickTracker.prevRightThumb = rightThumb;
-
-        const processIndexStroke = (hand: ProcessedHand, side: 'left' | 'right') => {
-          const tip = hand.indexTip;
-          if (!tip || hand.isFist || !hand.indexExtended) return;
-
-          const striker = drumTrackerRef.current[side];
-          const mirroredX = 1.0 - tip.x;
-          const currentY = tip.y;
-          const currentZ = tip.z || 0;
-          const dt = Math.max(1, now - striker.time);
-
-          const vz = (currentZ - striker.z) / (dt / 16.6);
-          const vy = (currentY - striker.y) / (dt / 16.6);
-
-          switch (striker.state) {
-            case 'ARMED': {
-              const isThrustForward = vz < -0.016;
-              const isDownwardSnap = vy > 0.020;
-
-              if (isThrustForward || isDownwardSnap) {
-                for (const zone of DRUM_ZONES) {
-                  const minX = zone.x - zone.width / 2;
-                  const maxX = zone.x + zone.width / 2;
-                  const minY = zone.y - zone.height / 2;
-                  const maxY = zone.y + zone.height / 2;
-
-                  if (mirroredX >= minX && mirroredX <= maxX && currentY >= minY && currentY <= maxY) {
-                    const velocity = Math.min(1.0, Math.max(0.65, Math.abs(vz) * 16 + vy * 9 + 0.65));
-                    drumEngine.triggerPad(zone.id as any, velocity);
-                    gestureVisualizer.addNormalizedRipple(mirroredX, currentY, zone.color);
-
-                    striker.state = 'STRUCK';
-                    striker.lastStrikeTime = now;
-                    striker.peakZ = currentZ;
-                    striker.peakY = currentY;
-                    detectedNote = zone.name;
-                    break;
-                  }
-                }
-              }
-              break;
-            }
-
-            case 'STRUCK': {
-              if (currentZ < striker.peakZ) {
-                striker.peakZ = currentZ;
-              }
-              if (currentY > striker.peakY) {
-                striker.peakY = currentY;
-              }
-
-              // Fast bi-directional recoil: recovers via upward bounce (vy < -0.012), Z pull-back, or 85ms timeout
-              const isPullingBack =
-                vz > 0.006 ||
-                vy < -0.012 ||
-                currentZ > striker.peakZ + 0.015 ||
-                (striker.peakY - currentY) > 0.02 ||
-                now - striker.lastStrikeTime > 85;
-
-              if (isPullingBack) {
-                striker.state = 'RECOILING';
-              }
-              break;
-            }
-
-            case 'RECOILING': {
-              // Rapid re-arming: ready for consecutive rolls in under 130ms (or instant on upward return)
-              const hasResetPosition =
-                currentZ > striker.peakZ + 0.025 ||
-                (striker.peakY - currentY) > 0.03 ||
-                vy < -0.006 ||
-                now - striker.lastStrikeTime > 130;
-
-              if (hasResetPosition) {
-                striker.state = 'ARMED';
-              }
-              break;
-            }
-          }
-
-          striker.y = currentY;
-          striker.z = currentZ;
-          striker.time = now;
-        };
-
-        if (right) processIndexStroke(right, 'right');
-        if (left) processIndexStroke(left, 'left');
       }
 
       // =====================================================================
@@ -437,10 +306,10 @@ export function useHandTracking(
       const currentCutoff = Math.round(200 * Math.pow(16000 / 200, right ? (1.0 - right.normalizedY) : 0.5));
 
       const primaryText = right
-        ? `DIR: ${detectedNote || 'MUTED'}`
+        ? `DIR: ${detectedNote || 'MUTED'}${right.isExtrapolated ? ' [MEM]' : ''}`
         : 'DIR: AGUARDANDO';
       const secondaryText = left
-        ? `ESQ: ${detectedChord || 'MUTED'}`
+        ? `ESQ: ${detectedChord || 'MUTED'}${left.isExtrapolated ? ' [MEM]' : ''}`
         : 'ESQ: AGUARDANDO';
 
       const shouldUpdateTelemetry =

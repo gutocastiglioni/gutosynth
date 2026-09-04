@@ -22,6 +22,7 @@ interface InstrumentRackProps {
   rootNote: string;
   onSelectRootNote: (root: string) => void;
   currentStep?: number;
+  showSwitcher?: boolean;
 }
 
 export const InstrumentRack: React.FC<InstrumentRackProps> = React.memo(({
@@ -31,7 +32,8 @@ export const InstrumentRack: React.FC<InstrumentRackProps> = React.memo(({
   onSelectScale,
   rootNote,
   onSelectRootNote,
-  currentStep = 0
+  currentStep = 0,
+  showSwitcher = true
 }) => {
   const instruments: { id: InstrumentId; label: string; icon: React.ReactNode }[] = [
     { id: 'synth', label: 'SYNTH', icon: <Waves size={15} /> },
@@ -58,29 +60,31 @@ export const InstrumentRack: React.FC<InstrumentRackProps> = React.memo(({
   return (
     <div className="w-full h-full flex flex-col justify-between space-y-4 font-mono">
       {/* 1. Single-Row 5-Column Segmented Instrument Switcher */}
-      <div className="grid grid-cols-5 gap-1.5 w-full bg-[#08080a] p-1 border border-white/20">
-        {instruments.map((inst) => {
-          const isSelected = activeInstrument === inst.id;
-          return (
-            <button
-              key={inst.id}
-              onClick={() => onSelectInstrument(inst.id)}
-              className={`
-                h-[42px] px-2 flex items-center justify-center gap-1.5 text-xs font-bold tracking-wider uppercase
-                transition-all duration-75 rounded-none border select-none cursor-pointer outline-none
-                ${
-                  isSelected
-                    ? 'bg-[#f4f4f5] text-black border-white font-bold shadow-md'
-                    : 'bg-[#141620] text-slate-300 border-white/15 hover:text-white hover:border-white/35 hover:bg-[#1c1f2e]'
-                }
-              `}
-            >
-              <span className="flex-shrink-0">{inst.icon}</span>
-              <span className="truncate">{inst.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      {showSwitcher && (
+        <div className="grid grid-cols-5 gap-1.5 w-full bg-[#08080a] p-1 border border-white/20">
+          {instruments.map((inst) => {
+            const isSelected = activeInstrument === inst.id;
+            return (
+              <button
+                key={inst.id}
+                onClick={() => onSelectInstrument(inst.id)}
+                className={`
+                  h-[42px] px-2 flex items-center justify-center gap-1.5 text-xs font-bold tracking-wider uppercase
+                  transition-all duration-75 rounded-none border select-none cursor-pointer outline-none
+                  ${
+                    isSelected
+                      ? 'bg-[#f4f4f5] text-black border-white font-bold shadow-md'
+                      : 'bg-[#141620] text-slate-300 border-white/15 hover:text-white hover:border-white/35 hover:bg-[#1c1f2e]'
+                  }
+                `}
+              >
+                <span className="flex-shrink-0">{inst.icon}</span>
+                <span className="truncate">{inst.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* 2. Scale & Root Key Row */}
       <div className="flex items-center justify-between gap-3 pb-3 border-b border-white/10">

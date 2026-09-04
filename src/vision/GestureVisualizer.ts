@@ -27,25 +27,27 @@ interface Ripple {
   maxRadius: number;
   color: string;
   alpha: number;
-}
-
-interface Ripple {
-  x: number;
-  y: number;
-  radius: number;
-  maxRadius: number;
-  color: string;
-  alpha: number;
   isNormalized?: boolean;
 }
 
 export const DRUM_ZONES = [
-  { id: 'hihat_closed', name: 'CLOSED HAT', x: 0.20, y: 0.28, width: 0.22, height: 0.24, color: '#f59e0b' },
-  { id: 'hihat_open', name: 'OPEN HAT', x: 0.50, y: 0.24, width: 0.22, height: 0.22, color: '#fbbf24' },
-  { id: 'cymbal', name: 'CRASH', x: 0.80, y: 0.28, width: 0.22, height: 0.24, color: '#ef4444' },
-  { id: 'snare', name: 'SNARE "PÁ"', x: 0.25, y: 0.65, width: 0.28, height: 0.28, color: '#00f2fe' },
-  { id: 'clap', name: 'CLAP', x: 0.75, y: 0.65, width: 0.28, height: 0.28, color: '#06d6a0' },
-  { id: 'tom', name: 'TOM // PERC', x: 0.50, y: 0.65, width: 0.24, height: 0.24, color: '#9d4edd' }
+  // Degrau 1 (Esquerda Baixo - isolado na coluna 1)
+  { id: 'snare', name: 'SNARE "PÁ"', x: 0.12, y: 0.48, width: 0.16, height: 0.16, color: '#00f2fe' },
+
+  // Degrau 2 (Esquerda Alto - coluna 2)
+  { id: 'hihat_closed', name: 'CLOSED HAT', x: 0.30, y: 0.26, width: 0.16, height: 0.15, color: '#f59e0b' },
+
+  // Degrau 3 (Topo Centro - coluna 3, acima da cabeça)
+  { id: 'hihat_open', name: 'OPEN HAT', x: 0.50, y: 0.14, width: 0.20, height: 0.12, color: '#fbbf24' },
+
+  // Degrau 4 (Direita Alto - coluna 4)
+  { id: 'cymbal', name: 'CRASH', x: 0.70, y: 0.26, width: 0.16, height: 0.15, color: '#ef4444' },
+
+  // Degrau 5 (Direita Baixo - coluna 5)
+  { id: 'clap', name: 'CLAP // PERC', x: 0.88, y: 0.48, width: 0.16, height: 0.16, color: '#06d6a0' },
+
+  // Meio Inferior: Bumbo centralizado ativado com o dedão
+  { id: 'kick', name: 'BUMBO // DEDÕES', x: 0.50, y: 0.80, width: 0.22, height: 0.12, color: '#f59e0b' }
 ];
 
 export class GestureVisualizer {
@@ -96,9 +98,10 @@ export class GestureVisualizer {
     // 1. Holographic Pitch Grid Lines
     this.drawHolographicGrid(ctx, width, height, mode);
 
-    // 2. Demarcated Drum Zones (when on Drums)
+    // 2. Demarcated Drum Zones & Central Breathing Cross (when on Drums)
     if (activeInstrument === 'drums') {
-      this.drawDrumZones(ctx, width, height);
+      this.drawCentralBreathingCross(ctx, width, height);
+      this.drawDrumZones(ctx, width, height, leftHand, rightHand);
     }
 
     // 3. Render Left Hand Frame (Electric Purple)
@@ -150,7 +153,24 @@ export class GestureVisualizer {
       }
     });
 
-    // 2. Joint Nodes: Extended tips get prominent white nodes, closed fingers stay subtle
+    // Determinação do dedo ativo no modo bateria por eliminação (indicador main, médio sobrepõe, etc.)
+    let activeStrikerJoint = -1;
+    let strikerLaserLabel = 'STRIKE';
+    if (hand.pinkyExtended) {
+      activeStrikerJoint = 20;
+      strikerLaserLabel = 'MÍNIMO';
+    } else if (hand.ringExtended) {
+      activeStrikerJoint = 16;
+      strikerLaserLabel = 'ANELAR';
+    } else if (hand.middleExtended) {
+      activeStrikerJoint = 12;
+      strikerLaserLabel = 'MÉDIO';
+    } else if (hand.indexExtended) {
+      activeStrikerJoint = 8;
+      strikerLaserLabel = 'STRIKE';
+    }
+
+    // 2. Joint Nodes: No modo bateria, apenas 1 bolinha para o dedo striker ativo + dedão extra (sem bolinhas múltiplas)
     for (let i = 0; i < 21; i++) {
       const p = landmarks[i];
       if (!p) continue;
@@ -158,11 +178,13 @@ export class GestureVisualizer {
       const py = p.y * h;
 
       const isExtendedTip =
-        (i === 4 && hand.thumbExtended) ||
-        (i === 8 && hand.indexExtended) ||
-        (i === 12 && hand.middleExtended) ||
-        (i === 16 && hand.ringExtended) ||
-        (i === 20 && hand.pinkyExtended);
+        activeInstrument === 'drums'
+          ? (i === 4 && hand.thumbExtended) || (i === activeStrikerJoint)
+          : (i === 4 && hand.thumbExtended) ||
+            (i === 8 && hand.indexExtended) ||
+            (i === 12 && hand.middleExtended) ||
+            (i === 16 && hand.ringExtended) ||
+            (i === 20 && hand.pinkyExtended);
 
       ctx.beginPath();
       ctx.arc(px, py, isExtendedTip ? 4.5 : 2.0, 0, Math.PI * 2);
@@ -170,21 +192,32 @@ export class GestureVisualizer {
       ctx.fill();
     }
 
-    // 3. Contextual Finger Lasers
+    // 3. Contextual Finger Lasers: No modo bateria, laser apenas no striker ativo e no dedão
     const isRight = hand.handedness === 'Right';
-    const thumbLabel = activeInstrument === 'drums' ? 'BUMBO' : (isRight ? 'SUB' : 'SUB / ROOT');
-    const indexLabel = activeInstrument === 'drums' ? 'STRIKE' : (isRight ? 'LEAD' : 'MELODY');
-    const midLabel = isRight ? '3RD' : '3RD';
-    const ringLabel = isRight ? '5TH' : '5TH';
-    const pinkyLabel = isRight ? 'OCT' : 'OCT';
+    let fingerDefs: Array<{ tip: any; extended: boolean; label: string }> = [];
 
-    const fingerDefs = [
-      { tip: landmarks[4], extended: hand.thumbExtended, label: thumbLabel },
-      { tip: landmarks[8], extended: hand.indexExtended, label: indexLabel },
-      { tip: landmarks[12], extended: hand.middleExtended, label: midLabel },
-      { tip: landmarks[16], extended: hand.ringExtended, label: ringLabel },
-      { tip: landmarks[20], extended: hand.pinkyExtended, label: pinkyLabel }
-    ];
+    if (activeInstrument === 'drums') {
+      if (hand.thumbExtended && landmarks[4]) {
+        fingerDefs.push({ tip: landmarks[4], extended: true, label: 'BUMBO' });
+      }
+      if (activeStrikerJoint !== -1 && landmarks[activeStrikerJoint]) {
+        fingerDefs.push({ tip: landmarks[activeStrikerJoint], extended: true, label: strikerLaserLabel });
+      }
+    } else {
+      const thumbLabel = isRight ? 'SUB' : 'SUB / ROOT';
+      const indexLabel = isRight ? 'LEAD' : 'MELODY';
+      const midLabel = isRight ? '3RD' : '3RD';
+      const ringLabel = isRight ? '5TH' : '5TH';
+      const pinkyLabel = isRight ? 'OCT' : 'OCT';
+
+      fingerDefs = [
+        { tip: landmarks[4], extended: hand.thumbExtended, label: thumbLabel },
+        { tip: landmarks[8], extended: hand.indexExtended, label: indexLabel },
+        { tip: landmarks[12], extended: hand.middleExtended, label: midLabel },
+        { tip: landmarks[16], extended: hand.ringExtended, label: ringLabel },
+        { tip: landmarks[20], extended: hand.pinkyExtended, label: pinkyLabel }
+      ];
+    }
 
     fingerDefs.forEach((f) => {
       if (!f.tip || !f.extended) return;
@@ -305,24 +338,125 @@ export class GestureVisualizer {
     ctx.restore();
   }
 
-  private drawDrumZones(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+  /**
+   * Render central holographic cross reticle defining the open breathing corridor for face tracking
+   */
+  private drawCentralBreathingCross(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+    const cx = width * 0.5;
+    const cy = height * 0.45;
+    const breath = Math.sin(this.pulsePhase) * 0.05 + 0.22;
+
+    ctx.save();
+
+    // 1. Crosshair Axes with subtle dash pattern
+    ctx.strokeStyle = `rgba(0, 242, 254, ${breath})`;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+
+    // Vertical axis (connecting Open Hat top and Bumbo bottom, leaving face reticle open)
+    ctx.beginPath();
+    ctx.moveTo(cx, height * 0.21);
+    ctx.lineTo(cx, cy - 20);
+    ctx.moveTo(cx, cy + 20);
+    ctx.lineTo(cx, height * 0.73);
+
+    // Horizontal axis (connecting lateral columns, leaving face reticle open)
+    ctx.moveTo(width * 0.28, cy);
+    ctx.lineTo(cx - 24, cy);
+    ctx.moveTo(cx + 24, cy);
+    ctx.lineTo(width * 0.72, cy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 2. Central Micro-Reticle (center precision mark for face alignment)
+    ctx.strokeStyle = `rgba(255, 255, 255, ${breath + 0.15})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, cy);
+    ctx.lineTo(cx + 8, cy);
+    ctx.moveTo(cx, cy - 8);
+    ctx.lineTo(cx, cy + 8);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#00f2fe';
+    ctx.fill();
+
+    // 3. Viewfinder Corner Brackets framing the user's face window
+    const boxW = width * 0.20;
+    const boxH = height * 0.28;
+    const bx1 = cx - boxW / 2;
+    const by1 = cy - boxH / 2;
+
+    ctx.strokeStyle = `rgba(255, 255, 255, ${breath * 0.85})`;
+    ctx.lineWidth = 1;
+    this.drawCornerTicks(ctx, bx1, by1, boxW, boxH, 8);
+
+    // 4. Subtle Monospace Typography Guides
+    ctx.fillStyle = `rgba(255, 255, 255, ${breath + 0.12})`;
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('ÁREA RESPIRÁVEL // ROSTO', cx, by1 - 6);
+    ctx.fillText('+ ENQUADRAMENTO +', cx, by1 + boxH + 14);
+
+    ctx.restore();
+  }
+
+  private drawCornerTicks(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, size: number): void {
+    ctx.beginPath();
+    ctx.moveTo(x, y + size); ctx.lineTo(x, y); ctx.lineTo(x + size, y);
+    ctx.moveTo(x + w - size, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + size);
+    ctx.moveTo(x, y + h - size); ctx.lineTo(x, y + h); ctx.lineTo(x + size, y + h);
+    ctx.moveTo(x + w - size, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - size);
+    ctx.stroke();
+  }
+
+  private drawDrumZones(ctx: CanvasRenderingContext2D, width: number, height: number, leftHand: ProcessedHand | null, rightHand: ProcessedHand | null): void {
+    const activeTips: Array<{ x: number; y: number; isKick: boolean }> = [];
+    [leftHand, rightHand].forEach((hand) => {
+      if (!hand) return;
+      const tip = hand.pinkyExtended ? hand.landmarks[20] : hand.ringExtended ? hand.landmarks[16] : hand.middleExtended ? hand.landmarks[12] : hand.indexExtended ? hand.landmarks[8] : hand.landmarks[8];
+      if (tip) activeTips.push({ x: 1.0 - tip.x, y: tip.y, isKick: false });
+      if (hand.thumbExtended && hand.landmarks[4]) activeTips.push({ x: 1.0 - hand.landmarks[4].x, y: hand.landmarks[4].y, isKick: true });
+    });
+
     DRUM_ZONES.forEach((zone) => {
       const zx = (zone.x - zone.width / 2) * width;
       const zy = (zone.y - zone.height / 2) * height;
       const zw = zone.width * width;
       const zh = zone.height * height;
 
+      // Sensibilidade visual: dedo ativo sobre ou tangenciando o hitbox
+      const margin = 0.025;
+      const isHovered = activeTips.some((t) => {
+        if (zone.id === 'kick') return t.isKick || (t.x >= zone.x - zone.width / 2 - margin && t.x <= zone.x + zone.width / 2 + margin && t.y >= zone.y - zone.height / 2 - margin && t.y <= zone.y + zone.height / 2 + margin);
+        return !t.isKick && t.x >= zone.x - zone.width / 2 - margin && t.x <= zone.x + zone.width / 2 + margin && t.y >= zone.y - zone.height / 2 - margin && t.y <= zone.y + zone.height / 2 + margin;
+      });
+
       ctx.save();
-      ctx.strokeStyle = `${zone.color}50`;
-      ctx.fillStyle = `${zone.color}08`;
-      ctx.lineWidth = 1.5;
+      if (isHovered) {
+        ctx.strokeStyle = '#ffffff';
+        ctx.fillStyle = `${zone.color}35`;
+        ctx.lineWidth = 2.0;
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = zone.color;
+      } else {
+        ctx.strokeStyle = `${zone.color}55`;
+        ctx.fillStyle = `${zone.color}0a`;
+        ctx.lineWidth = 1.5;
+      }
       ctx.strokeRect(zx, zy, zw, zh);
       ctx.fillRect(zx, zy, zw, zh);
 
-      ctx.fillStyle = zone.color;
+      ctx.strokeStyle = isHovered ? '#ffffff' : zone.color;
+      ctx.lineWidth = isHovered ? 2.5 : 2;
+      this.drawCornerTicks(ctx, zx, zy, zw, zh, isHovered ? 8 : 6);
+
+      ctx.fillStyle = isHovered ? '#ffffff' : zone.color;
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(zone.name, zx + zw / 2, zy + zh / 2 + 3);
+      ctx.fillText(isHovered ? `● ${zone.name}` : zone.name, zx + zw / 2, zy + zh / 2 + 3);
       ctx.restore();
     });
   }
