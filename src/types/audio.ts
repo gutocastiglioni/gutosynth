@@ -102,3 +102,14 @@ export interface LooperState {
   metronome: boolean;
   masterVolume: number;
 }
+
+export type TriggerMode = 'continuous' | 'single' | 'repeat';
+
+export type RepeatSubdivision = '1/4' | '1/8' | '1/16' | '1/32';
+
+export interface TriggerSettings {
+  mode: TriggerMode;
+  subdivision: RepeatSubdivision;
+  speedHz: number; // 1.0 to 20.0 Hz
+  gateTime: number; // 0.05 to 0.8s
+}

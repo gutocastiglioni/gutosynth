@@ -8,7 +8,7 @@ import { HolographicHUD } from '../visualizer/HolographicHUD';
 import { InstrumentRack } from '../instruments/InstrumentRack';
 import { MultiTrackTimeline } from '../looper/MultiTrackTimeline';
 import { ProcessedHand, GestureTelemetry, HUDVisualMode } from '../../types/gesture';
-import { InstrumentId, ScaleName, TrackState, LooperState } from '../../types/audio';
+import { InstrumentId, ScaleName, TrackState, LooperState, TriggerSettings } from '../../types/audio';
 
 interface DesktopLayoutProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -25,6 +25,8 @@ interface DesktopLayoutProps {
   onSelectRootNote: (r: string) => void;
   hudMode: HUDVisualMode;
   onSetHudMode: (m: HUDVisualMode) => void;
+  triggerSettings: TriggerSettings;
+  onTriggerSettingsChange: (s: TriggerSettings) => void;
   tracks: TrackState[];
   onVolumeChange: (id: InstrumentId, vol: number) => void;
   onPanChange: (id: InstrumentId, pan: number) => void;
@@ -59,6 +61,8 @@ export const DesktopLayout: React.FC<DesktopLayoutProps> = ({
   onSelectRootNote,
   hudMode,
   onSetHudMode,
+  triggerSettings,
+  onTriggerSettingsChange,
   tracks,
   onVolumeChange,
   onPanChange,
@@ -129,6 +133,9 @@ export const DesktopLayout: React.FC<DesktopLayoutProps> = ({
           rootNote={rootNote}
           onSelectRootNote={onSelectRootNote}
           currentStep={currentStep}
+          triggerSettings={triggerSettings}
+          onTriggerSettingsChange={onTriggerSettingsChange}
+          currentBpm={looperState.bpm}
         />
       </div>
     </div>

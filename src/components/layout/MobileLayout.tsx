@@ -9,7 +9,7 @@ import { HolographicHUD } from '../visualizer/HolographicHUD';
 import { InstrumentRack } from '../instruments/InstrumentRack';
 import { MobileTrackArranger } from '../looper/MobileTrackArranger';
 import { ProcessedHand, GestureTelemetry, HUDVisualMode } from '../../types/gesture';
-import { InstrumentId, ScaleName, TrackState, LooperState } from '../../types/audio';
+import { InstrumentId, ScaleName, TrackState, LooperState, TriggerSettings } from '../../types/audio';
 
 interface MobileLayoutProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -26,6 +26,8 @@ interface MobileLayoutProps {
   onSelectRootNote: (r: string) => void;
   hudMode: HUDVisualMode;
   onSetHudMode: (m: HUDVisualMode) => void;
+  triggerSettings: TriggerSettings;
+  onTriggerSettingsChange: (s: TriggerSettings) => void;
   tracks: TrackState[];
   onVolumeChange: (id: InstrumentId, vol: number) => void;
   onPanChange: (id: InstrumentId, pan: number) => void;
@@ -60,6 +62,8 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({
   onSelectRootNote,
   hudMode,
   onSetHudMode,
+  triggerSettings,
+  onTriggerSettingsChange,
   tracks,
   onVolumeChange,
   onPanChange,
@@ -179,6 +183,9 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({
               onSelectRootNote={onSelectRootNote}
               currentStep={currentStep}
               showSwitcher={false}
+              triggerSettings={triggerSettings}
+              onTriggerSettingsChange={onTriggerSettingsChange}
+              currentBpm={looperState.bpm}
             />
           </div>
         )}

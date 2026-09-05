@@ -147,6 +147,26 @@ export class PolySynthEngine {
     this.currentLeadNote = null;
   }
 
+  /**
+   * Triggers a discrete single note (One-Shot / Staccato) without continuous sustain
+   */
+  public triggerSingleNote(note: string, duration: number | string = '8n', velocity = 0.85): void {
+    if (!this.leadSynth) this.init();
+    if (!this.leadSynth) return;
+
+    try {
+      const now = Tone.now();
+      if (this.isLeadActive) {
+        this.leadSynth.triggerRelease(now);
+        this.isLeadActive = false;
+      }
+      this.leadSynth.triggerAttackRelease(note, duration, now, velocity);
+      this.currentLeadNote = note;
+    } catch {
+      // safe ignore
+    }
+  }
+
   public releaseAllFingers(): void {
     this.releaseLead();
   }
@@ -198,6 +218,26 @@ export class PolySynthEngine {
       uniqueNotes.forEach((n) => this.chordNotes.add(n));
     } catch (e) {
       console.warn('PolySynth triggerChord error:', e);
+    }
+  }
+
+  /**
+   * Triggers a discrete single chord voicing without continuous sustain
+   */
+  public triggerChordSingle(notes: string[], duration: number | string = '4n', velocity = 0.75): void {
+    if (!this.chordSynth) this.init();
+    if (!this.chordSynth) return;
+
+    const uniqueNotes = Array.from(new Set(notes.filter(Boolean)));
+    if (uniqueNotes.length === 0) return;
+
+    try {
+      const now = Tone.now();
+      this.chordSynth.releaseAll();
+      this.chordNotes.clear();
+      this.chordSynth.triggerAttackRelease(uniqueNotes, duration, now, velocity);
+    } catch {
+      // safe ignore
     }
   }
 

@@ -16,7 +16,7 @@ import { GestureHelper } from './components/visualizer/GestureHelper';
 import { ExportModal } from './components/looper/ExportModal';
 import { ProjectLibraryModal } from './components/projects/ProjectLibraryModal';
 import { ToastContainer, ToastMessage } from './components/common/Toast';
-import { ScaleName } from './types/audio';
+import { ScaleName, TriggerSettings } from './types/audio';
 import { PresetLibraryItem } from './types/project';
 import { polySynthEngine } from './audio/instruments/PolySynthEngine';
 import { guitarEngine } from './audio/instruments/GuitarEngine';
@@ -26,6 +26,12 @@ export const App: React.FC = () => {
   const responsive = useResponsive();
   const [scale, setScale] = useState<ScaleName>('minor');
   const [rootNote, setRootNote] = useState<string>('C');
+  const [triggerSettings, setTriggerSettings] = useState<TriggerSettings>({
+    mode: 'continuous',
+    subdivision: '1/16',
+    speedHz: 8,
+    gateTime: 0.2
+  });
 
   // Modals state
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -72,7 +78,7 @@ export const App: React.FC = () => {
     leftHand,
     rightHand,
     telemetry
-  } = useHandTracking(activeInstrument, scale, rootNote, isAudioReady);
+  } = useHandTracking(activeInstrument, scale, rootNote, isAudioReady, triggerSettings, looperState.bpm);
 
   const addToast = useCallback((type: 'success' | 'error' | 'info', title: string, description?: string) => {
     const id = `toast-${Date.now()}-${Math.random()}`;
@@ -141,6 +147,8 @@ export const App: React.FC = () => {
               onSelectRootNote={setRootNote}
               hudMode={hudMode}
               onSetHudMode={setHudMode}
+              triggerSettings={triggerSettings}
+              onTriggerSettingsChange={setTriggerSettings}
               tracks={tracks}
               onVolumeChange={updateTrackVolume}
               onPanChange={updateTrackPan}
@@ -179,6 +187,8 @@ export const App: React.FC = () => {
             onSelectRootNote={setRootNote}
             hudMode={hudMode}
             onSetHudMode={setHudMode}
+            triggerSettings={triggerSettings}
+            onTriggerSettingsChange={setTriggerSettings}
             tracks={tracks}
             onVolumeChange={updateTrackVolume}
             onPanChange={updateTrackPan}

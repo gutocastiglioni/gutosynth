@@ -18,16 +18,17 @@ import { bassEngine } from '../audio/instruments/BassEngine';
 import { drumEngine } from '../audio/instruments/DrumEngine';
 import { micVoiceEngine } from '../audio/instruments/MicVoiceEngine';
 import { quantizeCoordinateToNote, getChordVoicing, getLeadNoteForHand, getScaleNotes } from '../audio/scales';
+import { dispatchLeadSound, dispatchChordSound, releaseAllInstrumentSounds } from '../audio/GestureAudioDispatcher';
 import { ProcessedHand, GestureTelemetry, HUDVisualMode } from '../types/gesture';
-import { InstrumentId, ScaleName } from '../types/audio';
-
-
+import { InstrumentId, ScaleName, TriggerSettings } from '../types/audio';
 
 export function useHandTracking(
   activeInstrument: InstrumentId,
   scale: ScaleName = 'minor',
   rootNote = 'C',
-  isAudioReady = false
+  isAudioReady = false,
+  triggerSettings?: TriggerSettings,
+  bpm = 120
 ) {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [hudMode, setHudMode] = useState<HUDVisualMode>('cyber');
@@ -51,6 +52,16 @@ export function useHandTracking(
   const lastChordKeyRef = useRef<string | null>(null);
   const wasActiveRef = useRef({ left: false, right: false });
 
+  // Finger lift and repeat tracking refs
+  const prevRightFingersRef = useRef({
+    thumb: false, index: false, middle: false, ring: false, pinky: false, count: 0, isPinching: false
+  });
+  const prevLeftFingersRef = useRef({
+    thumb: false, index: false, middle: false, ring: false, pinky: false, count: 0, isPinching: false
+  });
+  const lastRightTriggerTimeRef = useRef(0);
+  const lastLeftTriggerTimeRef = useRef(0);
+
   // Presence & throttle refs to decouple high-speed 60fps tracking from React render cycle
   const prevLeftPresenceRef = useRef(false);
   const prevRightPresenceRef = useRef(false);
@@ -58,6 +69,25 @@ export function useHandTracking(
   const prevPrimaryTextRef = useRef('');
   const prevSecondaryTextRef = useRef('');
   const lastTelemetryTimeRef = useRef(0);
+
+  const triggerSettingsRef = useRef(triggerSettings);
+  useEffect(() => {
+    triggerSettingsRef.current = triggerSettings;
+  }, [triggerSettings]);
+
+  // Cleanly stop audio on trigger mode switch
+  const prevModeRef = useRef(triggerSettings?.mode);
+  useEffect(() => {
+    if (triggerSettings && prevModeRef.current !== triggerSettings.mode) {
+      polySynthEngine.releaseAll();
+      guitarEngine.stopAll();
+      bassEngine.triggerRelease();
+      lastActiveNoteRef.current = null;
+      lastChordKeyRef.current = null;
+      wasActiveRef.current = { left: false, right: false };
+      prevModeRef.current = triggerSettings.mode;
+    }
+  }, [triggerSettings?.mode]);
 
   const smoothYRef = useRef<Record<FingerId, number>>({
     thumb: 0.5, index: 0.5, middle: 0.5, ring: 0.5, pinky: 0.5
@@ -177,8 +207,33 @@ export function useHandTracking(
       }
 
       // =====================================================================
-      // 2. RIGHT HAND (MELODY / EXPRESSION) - STRICT ZERO ON NO EXTENDED FINGER
+      // 2. RIGHT HAND (MELODY / EXPRESSION)
       // =====================================================================
+      const curFingersRight = {
+        thumb: Boolean(right?.thumbExtended),
+        index: Boolean(right?.indexExtended),
+        middle: Boolean(right?.middleExtended),
+        ring: Boolean(right?.ringExtended),
+        pinky: Boolean(right?.pinkyExtended),
+        count: numActiveFingersRight,
+        isPinching: Boolean(right?.isPinching)
+      };
+      const prevFingersRight = prevRightFingersRef.current;
+      const fingerLiftedRight =
+        (!prevFingersRight.thumb && curFingersRight.thumb) ||
+        (!prevFingersRight.index && curFingersRight.index) ||
+        (!prevFingersRight.middle && curFingersRight.middle) ||
+        (!prevFingersRight.ring && curFingersRight.ring) ||
+        (!prevFingersRight.pinky && curFingersRight.pinky) ||
+        (!prevFingersRight.isPinching && curFingersRight.isPinching) ||
+        (curFingersRight.count > prevFingersRight.count);
+      prevRightFingersRef.current = curFingersRight;
+
+      const triggerMode = triggerSettingsRef.current?.mode || 'continuous';
+      const speedHz = Math.max(0.5, triggerSettingsRef.current?.speedHz || 8);
+      const repeatIntervalMs = 1000 / speedHz;
+      const gateDuration = triggerSettingsRef.current?.gateTime || 0.2;
+
       if (activeInstrument !== 'drums') {
         if (!hasVisualRight) {
           // Zero sons imediato na mão direita quando fechada ou ausente
@@ -189,6 +244,9 @@ export function useHandTracking(
           }
           lastActiveNoteRef.current = null;
           wasActiveRef.current.right = false;
+          prevRightFingersRef.current = {
+            thumb: false, index: false, middle: false, ring: false, pinky: false, count: 0, isPinching: false
+          };
           detectedNote = right ? 'MUTED (FECHADA)' : null;
         } else if (right) {
           const maxActiveHeight = Math.max(0.01, Math.min(1.0, right.normalizedY));
@@ -200,51 +258,62 @@ export function useHandTracking(
             pinky: right.pinkyExtended
           }, 3);
 
-          switch (activeInstrument) {
-            case 'synth': {
-              polySynthEngine.setGestureModulation(right.normalizedX, maxActiveHeight);
-              polySynthEngine.playLead(leadNote, 0.85);
+          const noteChangedRight = lastActiveNoteRef.current !== leadNote;
+
+          if (triggerMode === 'continuous') {
+            dispatchLeadSound(activeInstrument, leadNote, 'continuous', gateDuration, right.normalizedX, maxActiveHeight, noteChangedRight);
+            lastActiveNoteRef.current = leadNote;
+            wasActiveRef.current.right = true;
+            detectedNote = leadNote;
+          } else if (triggerMode === 'single') {
+            // Modo Nota Única: levantar os dedos marca uma nota (sem som contínuo)
+            const shouldTrigger = fingerLiftedRight || noteChangedRight || !wasActiveRef.current.right;
+            if (shouldTrigger) {
+              dispatchLeadSound(activeInstrument, leadNote, 'single', gateDuration, right.normalizedX, maxActiveHeight, noteChangedRight);
               lastActiveNoteRef.current = leadNote;
               wasActiveRef.current.right = true;
-              detectedNote = leadNote;
-              break;
             }
-
-            case 'guitar': {
-              guitarEngine.setGestureDriveTone(right.normalizedX, maxActiveHeight);
-              if (lastActiveNoteRef.current !== leadNote) {
-                guitarEngine.playLeadNote(leadNote, 0.9);
-                lastActiveNoteRef.current = leadNote;
-                wasActiveRef.current.right = true;
-              }
-              detectedNote = leadNote;
-              break;
+            detectedNote = `${leadNote} [1-SHOT]`;
+          } else if (triggerMode === 'repeat') {
+            // Modo Repetição: repete as notas na velocidade controlada
+            const timeSinceLast = now - lastRightTriggerTimeRef.current;
+            const isIntervalDue = timeSinceLast >= repeatIntervalMs;
+            const shouldTrigger = fingerLiftedRight || noteChangedRight || isIntervalDue || !wasActiveRef.current.right;
+            if (shouldTrigger) {
+              const clampedGate = Math.min(gateDuration, (repeatIntervalMs / 1000) * 0.85);
+              dispatchLeadSound(activeInstrument, leadNote, 'repeat', clampedGate, right.normalizedX, maxActiveHeight, noteChangedRight);
+              lastRightTriggerTimeRef.current = now;
+              lastActiveNoteRef.current = leadNote;
+              wasActiveRef.current.right = true;
             }
-
-            case 'bass': {
-              bassEngine.setGestureFilter(right.normalizedX, maxActiveHeight);
-              // Audible bass octave 2 and 3 (65Hz - 240Hz)
-              const bassNote = quantizeCoordinateToNote(maxActiveHeight, rootNote, scale, 2, 2);
-              if (lastActiveNoteRef.current !== bassNote) {
-                bassEngine.triggerAttack(bassNote, 0.95);
-                lastActiveNoteRef.current = bassNote;
-                wasActiveRef.current.right = true;
-              }
-              detectedNote = bassNote;
-              break;
-            }
-
-            case 'mic':
-              micVoiceEngine.setGestureVoiceModulation(right.normalizedX, maxActiveHeight);
-              detectedNote = leadNote;
-              break;
+            detectedNote = `${leadNote} [${triggerSettingsRef.current?.subdivision || 'REP'}]`;
           }
         }
       }
 
       // =====================================================================
-      // 3. LEFT HAND (CHORDS / HARMONY) - STRICT ZERO ON NO EXTENDED FINGER
+      // 3. LEFT HAND (CHORDS / HARMONY)
       // =====================================================================
+      const curFingersLeft = {
+        thumb: Boolean(left?.thumbExtended),
+        index: Boolean(left?.indexExtended),
+        middle: Boolean(left?.middleExtended),
+        ring: Boolean(left?.ringExtended),
+        pinky: Boolean(left?.pinkyExtended),
+        count: numActiveFingersLeft,
+        isPinching: Boolean(left?.isPinching)
+      };
+      const prevFingersLeft = prevLeftFingersRef.current;
+      const fingerLiftedLeft =
+        (!prevFingersLeft.thumb && curFingersLeft.thumb) ||
+        (!prevFingersLeft.index && curFingersLeft.index) ||
+        (!prevFingersLeft.middle && curFingersLeft.middle) ||
+        (!prevFingersLeft.ring && curFingersLeft.ring) ||
+        (!prevFingersLeft.pinky && curFingersLeft.pinky) ||
+        (!prevFingersLeft.isPinching && curFingersLeft.isPinching) ||
+        (curFingersLeft.count > prevFingersLeft.count);
+      prevLeftFingersRef.current = curFingersLeft;
+
       if (activeInstrument !== 'drums') {
         if (!hasVisualLeft) {
           // Zero sons imediato na mão esquerda quando fechada ou ausente
@@ -255,6 +324,9 @@ export function useHandTracking(
           }
           lastChordKeyRef.current = null;
           wasActiveRef.current.left = false;
+          prevLeftFingersRef.current = {
+            thumb: false, index: false, middle: false, ring: false, pinky: false, count: 0, isPinching: false
+          };
           detectedChord = left ? 'MUTED (FECHADA)' : null;
         } else if (left) {
           const chordOctave = left.normalizedY > 0.6 ? 4 : 3;
@@ -274,33 +346,44 @@ export function useHandTracking(
           }
 
           const chordKey = `${left.chordIndex}_${hasSub}_${chordOctave}_${chordNotes.join('-')}`;
+          const chordChanged = lastChordKeyRef.current !== chordKey;
+          const bassNotes = activeInstrument === 'bass' ? getScaleNotes(rootNote, scale, 2, 2) : [];
+          const rootBassNote = bassNotes[left.chordIndex % Math.max(1, bassNotes.length)] || 'C2';
 
-          if (activeInstrument === 'bass') {
-            const bassNotes = getScaleNotes(rootNote, scale, 2, 2);
-            const rootBassNote = bassNotes[left.chordIndex % Math.max(1, bassNotes.length)] || 'C2';
-            if (lastChordKeyRef.current !== rootBassNote || !wasActiveRef.current.left) {
-              bassEngine.triggerAttack(rootBassNote, 0.95);
-              lastChordKeyRef.current = rootBassNote;
+          if (triggerMode === 'continuous') {
+            const isBassChanged = lastChordKeyRef.current !== rootBassNote || !wasActiveRef.current.left;
+            const isTrig = activeInstrument === 'bass' ? isBassChanged : (chordChanged || !wasActiveRef.current.left);
+            dispatchChordSound(activeInstrument, chordNotes, rootBassNote, 'continuous', gateDuration, isTrig);
+            lastChordKeyRef.current = activeInstrument === 'bass' ? rootBassNote : chordKey;
+            wasActiveRef.current.left = true;
+            detectedChord = activeInstrument === 'bass' ? `BASS ROOT: ${rootBassNote}` : detectedChord;
+          } else if (triggerMode === 'single') {
+            const shouldTriggerChord = fingerLiftedLeft || chordChanged || !wasActiveRef.current.left;
+            if (shouldTriggerChord) {
+              dispatchChordSound(activeInstrument, chordNotes, rootBassNote, 'single', gateDuration, true);
+              lastChordKeyRef.current = activeInstrument === 'bass' ? rootBassNote : chordKey;
               wasActiveRef.current.left = true;
             }
-            detectedChord = `BASS ROOT: ${rootBassNote}`;
-          } else if (lastChordKeyRef.current !== chordKey || !wasActiveRef.current.left) {
-            if (activeInstrument === 'synth') {
-              polySynthEngine.triggerChord(chordNotes, 0.75);
-            } else if (activeInstrument === 'guitar') {
-              guitarEngine.strumChord(chordNotes, 'down', 0.85);
+            detectedChord = activeInstrument === 'bass' ? `BASS: ${rootBassNote} [1-SHOT]` : `${detectedChord} [1-SHOT]`;
+          } else if (triggerMode === 'repeat') {
+            const timeSinceLast = now - lastLeftTriggerTimeRef.current;
+            const isIntervalDue = timeSinceLast >= repeatIntervalMs;
+            const shouldTriggerChord = fingerLiftedLeft || chordChanged || isIntervalDue || !wasActiveRef.current.left;
+            if (shouldTriggerChord) {
+              const clampedGate = Math.min(gateDuration, (repeatIntervalMs / 1000) * 0.85);
+              dispatchChordSound(activeInstrument, chordNotes, rootBassNote, 'repeat', clampedGate, true);
+              lastChordKeyRef.current = activeInstrument === 'bass' ? rootBassNote : chordKey;
+              wasActiveRef.current.left = true;
+              lastLeftTriggerTimeRef.current = now;
             }
-            lastChordKeyRef.current = chordKey;
-            wasActiveRef.current.left = true;
+            detectedChord = activeInstrument === 'bass' ? `BASS: ${rootBassNote} [${triggerSettingsRef.current?.subdivision || 'REP'}]` : `${detectedChord} [${triggerSettingsRef.current?.subdivision || 'REP'}]`;
           }
         }
       }
 
       // If absolutely no active fingers exist across both hands, guarantee silence
       if (!hasVisualLeft && !hasVisualRight && activeInstrument !== 'drums') {
-        polySynthEngine.releaseAll();
-        guitarEngine.stopAll();
-        bassEngine.triggerRelease();
+        releaseAllInstrumentSounds();
       }
 
       const currentCutoff = Math.round(200 * Math.pow(16000 / 200, right ? (1.0 - right.normalizedY) : 0.5));
